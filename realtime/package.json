@@ -1,0 +1,19 @@
+{
+  "name": "codeexpetra-hackathon",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "node": "^26.12.0",
+    "websocket": "^1.0.35",
+    "ws": "^8.22.0"
+  }
+}
