@@ -607,6 +607,8 @@
             }
         }
     </style>
+    <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 
 <body>
@@ -642,7 +644,7 @@
             const d = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme:dark)").matches);
             const h = location.hash || "#/", lk = (p, l) => `<a href="${p}" class="${h.startsWith(p) ? "on" : ""}">${l}</a>`;
             $("#top").innerHTML = `<a class="logo" href="#/">Code Battle <i>{ }</i></a><nav class="row">${U ? (U.role === "admin" ? lk("#/admin/rounds", "Rounds") + lk("#/admin/questions", "Questions") + lk("#/admin/subs", "Submissions") + lk("#/admin/results", "Results") : lk("#/dashboard", "Rounds") + lk("#/perf", "My score") + lk("#/analytics", "Analyser") + lk("#/board", "Leaderboard")) : ""}</nav>
-<button class="btn s" onclick="theme()" aria-label="Toggle light and dark mode">${d ? "Light mode" : "Dark mode"}</button>${U ? `<button class="btn s" onclick="U=null;location.hash='#/';">Log out</button>` : `<a class="btn s p" href="#/login">Log in</a>`}`
+<button class="btn s" onclick="theme()" aria-label="Toggle light and dark mode">${d ? "Light mode" : "Dark mode"}</button>${U ? `<button class="btn s" onclick="logout()">Log out</button>` : `<a class="btn s p" href="#/login">Log in</a>`}`
         }
         function route() {
             clearInterval(tick); RT.leave(); const h = location.hash || "#/", [, a, b] = h.split("/"); paint();
@@ -660,8 +662,39 @@
             return `<section class="hero"><p class="mut">Four rounds. One leaderboard. ${board.length + 1} coders already in.</p><h1>Out-think, out-code, out-debug everyone else.</h1><p class="mut" style="max-width:56ch">Code Battle is a timed online hackathon. Clear a quiz, solve problems, fix broken code, then face the final round. Scores update live and only qualifiers move on.</p><div class="row" style="margin-top:18px"><a class="btn p" href="#/register">Join the battle</a><a class="btn" href="#/board">Log in to see live rankings</a></div></section>
 <div class="stage">${rounds.map((r, i) => `<div><span class="tag ${r.status}">${r.status}</span><b style="margin-top:8px">${esc(r.name)}</b><span class="mut">${r.dur} min · top score ${r.cut || "?"}% to qualify</span></div>`).join("")}</div>
 <div class="grid"><div class="card"><h2>Fair clock</h2><p class="mut">Timers run on the server. Your screen only displays them.</p></div><div class="card"><h2>Instant scoring</h2><p class="mut">Quiz answers and code tests are graded the moment you submit.</p></div><div class="card"><h2>Live ranking</h2><p class="mut">Ties are broken by total time, so every second counts.</p></div></div>`}
-        function auth(m) { const reg = m === "register"; return `<div class="card" style="max-width:420px;margin:30px auto"><h1 style="font-size:26px">${reg ? "Create your account" : "Welcome back"}</h1>${NEXT ? '<p class="mut">Log in to see the live rankings.</p>' : ""}<form onsubmit="return login(event,${reg})">${reg ? `<label>Full name</label><input name="n" required minlength="2">` : ""}<label>Email</label><input name="e" type="email" required><label>Password</label><input name="p" type="password" required minlength="6"><label>Sign in as</label><select name="r"><option value="user">Participant</option><option value="admin">Admin</option></select><button class="btn p" style="width:100%;margin-top:16px">${reg ? "Create account" : "Log in"}</button></form><p class="mut">${reg ? `Have an account? <a href="#/login"><u>Log in</u></a>` : `New here? <a href="#/register"><u>Register</u></a>`}</p></div>` }
-        function login(e, reg) { e.preventDefault(); const f = new FormData(e.target), em = f.get("e"); U = { name: f.get("n") || em.split("@")[0], role: f.get("r"), email: em }; me.n = U.name; toast(reg ? "Account created" : "Logged in"); const nx = NEXT; NEXT = null; location.hash = nx || (U.role === "admin" ? "#/admin/rounds" : "#/dashboard"); return false }
+        function auth(m) { const reg = m === "register"; return `<div class="card" style="max-width:420px;margin:30px auto"><h1 style="font-size:26px">${reg ? "Create your account" : "Welcome back"}</h1>${NEXT ? '<p class="mut">Log in to see the live rankings.</p>' : ""}<form onsubmit="return login(event,${reg})">${reg ? `<label>Full name</label><input name="n" required minlength="2">` : ""}<label>Email</label><input name="e" type="email" required><label>Password</label><input name="p" type="password" required minlength="6">${SB ? "" : '<label>Sign in as (demo only)</label><select name="r"><option value="user">Participant</option><option value="admin">Admin</option></select>'}<p id="aerr" role="alert" style="color:var(--bad);min-height:1.3em;margin:10px 0 0"></p><button class="btn p" style="width:100%;margin-top:16px">${reg ? "Create account" : "Log in"}</button></form><p class="mut">${!reg && SB ? `<a href="#" onclick="forgot();return false"><u>Forgot password?</u></a> · ` : ""}${reg ? `Have an account? <a href="#/login"><u>Log in</u></a>` : `New here? <a href="#/register"><u>Register</u></a>`}</p></div>` }
+        async function login(e, reg) {
+            e.preventDefault(); const f = new FormData(e.target), em = f.get("e").trim(), btn = e.target.querySelector("button.p"), er = $("#aerr"), lab = reg ? "Create account" : "Log in"; er.textContent = "";
+            const go = () => { toast(reg ? "Account created" : "Logged in"); const nx = NEXT; NEXT = null; location.hash = nx || (U.role === "admin" ? "#/admin/rounds" : "#/dashboard") };
+            if (!SB) { U = { name: f.get("n") || em.split("@")[0], role: f.get("r"), email: em }; me.n = U.name; go(); return false }
+            btn.disabled = true; btn.textContent = "Please wait\u2026";
+            try {
+                if (reg) {
+                    const { data, error } = await SB.auth.signUp({ email: em, password: f.get("p"), options: { data: { name: f.get("n").trim() } } }); if (error) throw error;
+                    if (!data.session) { er.style.color = "var(--ok)"; er.textContent = "Account created. Check your email to confirm it, then log in."; btn.disabled = false; btn.textContent = lab; return false }
+                }
+                else { const { error } = await SB.auth.signInWithPassword({ email: em, password: f.get("p") }); if (error) throw error }
+                await loadUser(); go()
+            }
+            catch (x) { const m = x.message || ""; er.style.color = "var(--bad)"; er.textContent = /invalid login/i.test(m) ? "Wrong email or password." : /already registered/i.test(m) ? "That email already has an account. Log in instead." : m || "Something went wrong. Try again."; btn.disabled = false; btn.textContent = lab }
+            return false
+        }
+        async function loadUser() {
+            const { data: { session } } = await SB.auth.getSession(); if (!session) { U = null; return }
+            const { data: p } = await SB.from("profiles").select("name,role").eq("id", session.user.id).maybeSingle();
+            U = { id: session.user.id, name: p?.name || session.user.email.split("@")[0], role: p?.role === "admin" ? "admin" : "user", email: session.user.email }; me.n = U.name
+        }
+        async function logout() { if (SB) await SB.auth.signOut(); U = null; location.hash = "#/"; route() }
+        async function forgot() { const em = prompt("Enter your account email"); if (!em) return; const { error } = await SB.auth.resetPasswordForEmail(em.trim(), { redirectTo: location.origin }); toast(error ? error.message : "If that email has an account, a reset link is on its way") }
+        async function init() {
+            if (SB) {
+                await loadUser(); SB.auth.onAuthStateChange((ev) => {
+                    if (ev === "SIGNED_OUT") { U = null; route() }
+                    if (ev === "PASSWORD_RECOVERY") setTimeout(async () => { const p = prompt("Choose a new password (6 or more characters)"); if (p) { const { error } = await SB.auth.updateUser({ password: p }); toast(error ? error.message : "Password updated") } }, 0)
+                })
+            }
+            route()
+        }
         function locked(r) { const i = rounds.indexOf(r); return i > 0 && me.done[rounds[i - 1].id] === undefined ? false : i > 0 && !me.q?.[rounds[i - 1].id] && me.done[rounds[i - 1].id] !== undefined }
         function dash() { const t = tot(me.s); return `<h1>Hi ${esc(U.name)}</h1><p class="mut">Your total: <b class="num">${t}</b> · rank <b class="num">#${ranked().find(x => x.me)?.rk}</b></p><div class="grid" style="margin-top:18px">${rounds.filter(r => r.status !== "draft").map((r, i) => { const d = me.done[r.id] !== undefined; return `<div class="card"><div class="row sp"><span class="tag ${r.status}">${r.status === "live" ? '<span class="pulse">●</span> ' : ""}${r.status}</span><span class="mut num">${r.dur} min</span></div><h2 style="margin-top:10px">${esc(r.name)}</h2><p class="mut">${esc(r.desc)}</p>${d ? `<p>Score <b class="num">${me.done[r.id]}</b> <span class="tag ${me.done[r.id] >= r.cut ? "ok" : "bad"}">${me.done[r.id] >= r.cut ? "qualified" : "not qualified"}</span></p>` : ""}<a class="btn ${r.status === "live" && !d ? "p" : ""}" href="#/round/${r.id}">${d ? "Review" : r.status === "live" ? "Open lobby" : "Details"}</a></div>` }).join("")}</div>` }
         function lobby(id) {
@@ -712,7 +745,8 @@
 <div class="two" style="margin-top:14px"><div class="card"><h2>Qualification outlook</h2><p class="mut">Your round score against the cut-off line.</p>${rounds.filter(r => r.status !== "draft").map(r => { const d = me.done[r.id]; return `<div class="hb" style="grid-template-columns:1fr"><div class="row sp"><b>${esc(r.name)}</b><span class="mut num">${d === undefined ? "Not attempted" : d + "%"} · cut-off ${r.cut}%</span></div><div class="bar2 mk"><i style="width:${d || 0}%"></i><u style="left:${r.cut}%"></u></div></div>` }).join("")}</div><div class="card"><h2>Topic strengths</h2><p class="mut">Average score by topic. Work on the shortest bars.</p>${topics.map(t => `<div class="hb"><b style="font-size:13px">${t[0].slice(0, 9)}</b><div class="bar2"><i style="width:${t[1]}%"></i></div><span class="num mut">${t[1]}%</span></div>`).join("")}</div></div>
 <div class="card" style="margin-top:14px"><div class="row sp"><div><h2 style="margin:0">Achievements</h2><span class="mut">${ach.filter(a => a[2] >= a[3]).length} of ${ach.length} earned</span></div></div><div class="grid" style="margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">${ach.map(a => { const p = Math.min(1, a[2] / a[3]); return `<div class="card ach ${p >= 1 ? "on" : ""}" style="padding:14px"><b>${p >= 1 ? "✓ " : ""}${a[0]}</b><p class="mut" style="margin:4px 0 8px">${a[1]}</p><div class="bar2"><i style="width:${p * 100}%"></i></div></div>` }).join("")}</div></div>`
         }
-        let NEXT = null; const WS_URL = "https://testing-cub3.onrender.com"; /* set to wss://your-server when the realtime server is deployed */
+        let NEXT = null; const CFG = window.CONFIG || {}, WS_URL = CFG.WS_URL || "";
+        const SB = (CFG.SUPABASE_URL && window.supabase) ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
         const RT = {
             u: {}, b: null, w: null, t: [], mode: "", id: Math.random().toString(36).slice(2, 8),
             join(room, cb) {
@@ -748,7 +782,7 @@
         function delQ(id) { if (confirm("Delete this question?")) { qs = qs.filter(q => q.id !== id); toast("Question deleted"); route() } }
         function regrade(id) { const s = subs.find(x => x.id === id); s.st = "re-evaluated"; toast("Re-evaluated"); route() }
         function delS(id) { subs = subs.filter(s => s.id !== id); toast("Submission removed"); route() }
-        route();
+        init();
     </script>
 </body>
 
